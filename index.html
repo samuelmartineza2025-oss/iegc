@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juego de la Serpiente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Estilos personalizados para el juego */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1f2937; /* Gris oscuro */
+        }
+        #game-board {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <div class="flex flex-col items-center bg-gray-800 p-6 rounded-xl shadow-2xl max-w-lg w-full">
+        <h1 class="text-3xl font-extrabold text-green-400 mb-4">🐍 La Gran Serpiente con Obstáculos 🍌</h1>
+        
+        <!-- Marcadores del juego -->
+        <div class="flex justify-between w-full text-white mb-4 p-3 bg-gray-900 rounded-lg">
+            <div class="text-lg font-semibold">Puntuación: <span id="score">0</span></div>
+            <div class="text-lg font-semibold">Velocidad: <span id="speed-indicator">Normal</span></div>
+        </div>
+
+        <!-- Área de juego: fondo negro -->
+        <canvas id="game-board" class="border-4 border-green-500 rounded-lg bg-black" width="400" height="400"></canvas>
+
+        <!-- Controles/Instrucciones para móvil -->
+        <div id="controls-panel" class="mt-6 w-full flex flex-col items-center">
+            <p class="text-gray-400 text-sm mb-3">Usa las **flechas del teclado** para mover.</p>
+            <div class="grid grid-cols-3 gap-2 w-48">
+                <button onclick="changeDirection('UP')" class="col-start-2 p-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transition duration-150">▲</button>
+                <button onclick="changeDirection('LEFT')" class="p-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transition duration-150">◀</button>
+                <button onclick="changeDirection('DOWN')" class="p-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transition duration-150">▼</button>
+                <button onclick="changeDirection('RIGHT')" class="p-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transition duration-150">▶</button>
+            </div>
+
+            <!-- Botón de Reinicio -->
+            <button id="restart-button" onclick="startGame()" class="mt-4 p-3 w-48 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-lg transition duration-150 transform hover:scale-105" style="display: none;">
+                Reiniciar Juego
+            </button>
+        </div>
+
+        <!-- Mensaje de Fin de Juego -->
+        <div id="message-box" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center hidden">
+            <div class="bg-gray-700 p-8 rounded-xl shadow-2xl text-center border-4 border-red-500">
+                <h2 id="message-text" class="text-4xl font-extrabold text-red-400 mb-4">¡Juego Terminado!</h2>
+                <p class="text-white text-xl mb-6">Tu puntuación final es: <span id="final-score" class="font-bold text-yellow-300">0</span></p>
+                <button onclick="startGame()" class="p-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transition duration-150">Jugar de Nuevo</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Configuración del juego
+        const canvas = document.getElementById('game-board');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+        const speedIndicator = document.getElementById('speed-indicator');
+        const messageBox = document.getElementById('message-box');
+        const messageText = document.getElementById('message-text');
+        const finalScoreDisplay = document.getElementById('final-score');
+        const restartButton = document.getElementById('restart-button');
+        
+        // Tamaños de la cuadrícula y la serpiente (más grande para tu requisito)
+        const GRID_SIZE = 20; // El tamaño de la cuadrícula en píxeles
+        const TILE_COUNT = canvas.width / GRID_SIZE; 
+        
+        // Propiedades del juego
+        let snake = [];
+        let dx = GRID_SIZE; // Dirección X (hacia la derecha inicialmente)
+        let dy = 0;        // Dirección Y
+        let banana = {};   // ¡Ahora es un banano!
+        let obstacles = []; // Array para los obstáculos
+        let score = 0;
+        let gameLoopInterval = null;
+        let gameSpeed = 100; // Milisegundos por fotograma (más pequeño = más rápido)
+        let isPaused = false;
+        let lastDirection = 'RIGHT';
+
+        // --- Funciones de Utilidad y Juego ---
+
+        /**
+         * Define y coloca los obstáculos iniciales en el tablero.
+         */
+        function initializeObstacles() {
+            // Obstáculos fijos (paredes de 2x2 bloques en el centro)
+            const center = TILE_COUNT / 2;
+            const c = center * GRID_SIZE;
+            const c_plus = (center + 1) * GRID_SIZE;
+            const c_minus = (center - 1) * GRID_SIZE;
+
+            obstacles = [
+                // Obstáculo superior central (2x2)
+                { x: c_minus, y: c_minus }, 
+                { x: c, y: c_minus },
+                { x: c_minus, y: c },
+                { x: c, y: c }
+            ];
+
+            // Añadir algunos obstáculos cerca de las esquinas
+            obstacles.push({ x: 2 * GRID_SIZE, y: 3 * GRID_SIZE });
+            obstacles.push({ x: (TILE_COUNT - 3) * GRID_SIZE, y: (TILE_COUNT - 4) * GRID_SIZE });
+        }
+
+
+        /**
+         * Inicializa o reinicia el juego.
+         */
+        function startGame() {
+            // Limpiar el intervalo anterior si existe
+            if (gameLoopInterval) {
+                clearInterval(gameLoopInterval);
+            }
+            
+            // Inicializar los obstáculos
+            initializeObstacles();
+
+            // Ocultar mensaje de fin de juego y botón de reiniciar
+            messageBox.classList.add('hidden');
+            restartButton.style.display = 'none';
+
+            // Estado inicial de la serpiente (más larga de lo normal)
+            snake = [
+                { x: 10 * GRID_SIZE, y: 10 * GRID_SIZE },
+                { x: 9 * GRID_SIZE, y: 10 * GRID_SIZE },
+                { x: 8 * GRID_SIZE, y: 10 * GRID_SIZE },
+                { x: 7 * GRID_SIZE, y: 10 * GRID_SIZE } // Un segmento extra
+            ];
+            
+            dx = GRID_SIZE; // Movimiento inicial a la derecha
+            dy = 0;
+            score = 0;
+            gameSpeed = 100;
+            lastDirection = 'RIGHT';
+            isPaused = false;
+            
+            scoreDisplay.textContent = score;
+            updateSpeedIndicator();
+            
+            placeBanana(); // Colocamos el banano
+            gameLoopInterval = setInterval(gameLoop, gameSpeed);
+        }
+
+        /**
+         * Genera una posición aleatoria para el banano.
+         */
+        function placeBanana() {
+            function getRandomTilePosition() {
+                return Math.floor(Math.random() * TILE_COUNT) * GRID_SIZE;
+            }
+            
+            let newBanana = { x: getRandomTilePosition(), y: getRandomTilePosition() };
+
+            // Asegurar que el banano no aparezca sobre la serpiente ni sobre un obstáculo
+            const isOverlapping = (pos) => {
+                const overlapsSnake = snake.some(segment => segment.x === pos.x && segment.y === pos.y);
+                const overlapsObstacle = obstacles.some(obstacle => obstacle.x === pos.x && obstacle.y === pos.y);
+                return overlapsSnake || overlapsObstacle;
+            };
+
+            while (isOverlapping(newBanana)) {
+                newBanana = { x: getRandomTilePosition(), y: getRandomTilePosition() };
+            }
+
+            banana = newBanana;
+        }
+
+        /**
+         * Bucle principal del juego. Se llama en cada intervalo.
+         */
+        function gameLoop() {
+            if (isPaused) return;
+
+            // 1. Mover la cabeza de la serpiente
+            const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+            
+            // 2. Comprobar colisiones
+            if (checkCollision(head)) {
+                gameOver();
+                return;
+            }
+
+            // 3. Añadir la nueva cabeza al frente
+            snake.unshift(head);
+            
+            // 4. Comprobar si come el banano
+            if (head.x === banana.x && head.y === banana.y) {
+                score++;
+                scoreDisplay.textContent = score;
+                placeBanana();
+                increaseSpeed(); // Aumentar la velocidad por cada 5 puntos
+            } else {
+                // 5. Si no come, quitar la cola (movimiento normal)
+                snake.pop();
+            }
+
+            // 6. Dibujar todo
+            drawGame();
+        }
+
+        /**
+         * Aumenta la velocidad del juego cada 5 puntos.
+         */
+        function increaseSpeed() {
+             if (score > 0 && score % 5 === 0) {
+                // Reducir el intervalo (aumenta la velocidad)
+                gameSpeed = Math.max(50, gameSpeed - 5); // Velocidad mínima de 50ms
+
+                clearInterval(gameLoopInterval);
+                gameLoopInterval = setInterval(gameLoop, gameSpeed);
+                updateSpeedIndicator();
+            }
+        }
+
+        /**
+         * Actualiza el indicador de velocidad.
+         */
+        function updateSpeedIndicator() {
+            let speedText;
+            if (gameSpeed > 80) speedText = 'Normal';
+            else if (gameSpeed > 60) speedText = 'Rápida';
+            else speedText = '¡Muy Rápida!';
+            speedIndicator.textContent = speedText;
+        }
+
+        /**
+         * Dibuja el tablero, el banano, los obstáculos y la serpiente.
+         */
+        function drawGame() {
+            // Limpiar el tablero (fondo negro)
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Dibujar el banano (color amarillo)
+            ctx.fillStyle = 'yellow';
+            ctx.shadowColor = 'yellow';
+            ctx.shadowBlur = 15;
+            // Dibujar un pequeño círculo para hacerlo parecer más un banano redondo (opcional)
+            ctx.fillRect(banana.x, banana.y, GRID_SIZE, GRID_SIZE); 
+            ctx.shadowBlur = 0; // Resetear la sombra
+
+            // Dibujar los obstáculos (muros)
+            ctx.fillStyle = '#4b5563'; // Gris oscuro
+            ctx.strokeStyle = '#6b7280';
+            obstacles.forEach(obstacle => {
+                ctx.fillRect(obstacle.x, obstacle.y, GRID_SIZE, GRID_SIZE);
+                ctx.strokeRect(obstacle.x, obstacle.y, GRID_SIZE, GRID_SIZE);
+            });
+
+
+            // Dibujar la serpiente
+            snake.forEach(drawSnakeSegment);
+        }
+
+        /**
+         * Dibuja un segmento de la serpiente, ajustando el tamaño del último segmento (la cola).
+         * @param {Object} segment - El objeto del segmento {x, y}.
+         * @param {number} index - El índice del segmento.
+         */
+        function drawSnakeSegment(segment, index) {
+            
+            // Color base: verde para el cuerpo, verde lima para la cabeza
+            ctx.fillStyle = index === 0 ? 'lime' : 'green';
+            
+            let size = GRID_SIZE;
+            let offset = 0;
+
+            if (index === 0) {
+                // La cabeza es más pequeña para darle forma
+                size = GRID_SIZE * 0.9; 
+                offset = (GRID_SIZE - size) / 2;
+                ctx.fillStyle = 'lime';
+                ctx.strokeStyle = '#333';
+
+            } else if (index === snake.length - 1) {
+                // ¡La cola es más ancha que el cuerpo! (Tu requisito)
+                const tailSizeFactor = 1.3; 
+                size = GRID_SIZE * tailSizeFactor;
+                offset = (GRID_SIZE - size) / 2;
+                ctx.fillStyle = 'darkgreen'; // Color diferente para destacar la cola
+            }
+            
+            // Dibujar el cuadrado
+            ctx.fillRect(segment.x + offset, segment.y + offset, size, size);
+            
+            // Añadir un borde sutil para que se vea más ancha y definida
+            ctx.strokeStyle = '#003300'; 
+            ctx.strokeRect(segment.x + offset, segment.y + offset, size, size);
+        }
+
+        /**
+         * Comprueba si la cabeza de la serpiente ha chocado con una pared, su propio cuerpo, o un obstáculo.
+         * @param {Object} head - La posición de la nueva cabeza.
+         * @returns {boolean} - Verdadero si hay colisión.
+         */
+        function checkCollision(head) {
+            // Colisión con paredes
+            const wallCollision = head.x < 0 || head.x >= canvas.width || head.y < 0 || head.y >= canvas.height;
+
+            // Colisión con el propio cuerpo (empezamos a revisar desde el 4º segmento)
+            const selfCollision = snake.slice(4).some(segment => segment.x === head.x && segment.y === head.y);
+
+            // Colisión con los obstáculos
+            const obstacleCollision = obstacles.some(obstacle => obstacle.x === head.x && obstacle.y === head.y);
+
+            return wallCollision || selfCollision || obstacleCollision;
+        }
+
+        /**
+         * Maneja el evento de fin de juego.
+         */
+        function gameOver() {
+            clearInterval(gameLoopInterval);
+            finalScoreDisplay.textContent = score;
+            messageBox.classList.remove('hidden');
+            restartButton.style.display = 'block';
+        }
+
+        /**
+         * Captura la pulsación de teclas y actualiza la dirección (dx, dy).
+         */
+        document.addEventListener('keydown', e => {
+            const key = e.key;
+            if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') {
+                e.preventDefault(); // Previene el desplazamiento de la página
+                handleKeyInput(key.replace('Arrow', '').toUpperCase());
+            }
+            // Control de pausa (espacio)
+            if (key === ' ' || key === 'Spacebar') {
+                e.preventDefault();
+                togglePause();
+            }
+        });
+
+        /**
+         * Maneja la lógica de cambio de dirección.
+         * @param {string} direction - 'UP', 'DOWN', 'LEFT', o 'RIGHT'.
+         */
+        function changeDirection(direction) {
+            handleKeyInput(direction);
+        }
+
+        /**
+         * Lógica para el manejo de la entrada (tecla o botón).
+         * @param {string} newDirection - La dirección intentada.
+         */
+        function handleKeyInput(newDirection) {
+            if (isPaused) return;
+
+            // Prevenir movimiento inverso inmediato (ej: de DERECHA a IZQUIERDA)
+            const goingUp = dy === -GRID_SIZE;
+            const goingDown = dy === GRID_SIZE;
+            const goingLeft = dx === -GRID_SIZE;
+            const goingRight = dx === GRID_SIZE;
+
+            if (newDirection === 'UP' && !goingDown) { dx = 0; dy = -GRID_SIZE; lastDirection = 'UP'; }
+            else if (newDirection === 'DOWN' && !goingUp) { dx = 0; dy = GRID_SIZE; lastDirection = 'DOWN'; }
+            else if (newDirection === 'LEFT' && !goingRight) { dx = -GRID_SIZE; dy = 0; lastDirection = 'LEFT'; }
+            else if (newDirection === 'RIGHT' && !goingLeft) { dx = GRID_SIZE; dy = 0; lastDirection = 'RIGHT'; }
+        }
+
+        /**
+         * Pausa/reproduce el juego.
+         */
+        function togglePause() {
+            isPaused = !isPaused;
+            if (isPaused) {
+                messageText.textContent = 'Juego en Pausa';
+                finalScoreDisplay.textContent = score;
+                messageBox.classList.remove('hidden');
+            } else {
+                messageBox.classList.add('hidden');
+            }
+        }
+        
+        // Iniciar el juego automáticamente al cargar la ventana
+        window.onload = function() {
+            // Asegurar que el canvas sea responsive (aunque mantenemos 400x400 para la lógica)
+            const parentWidth = canvas.parentElement.clientWidth;
+            const size = Math.min(400, parentWidth - 32); // 32 = padding
+            canvas.width = size - (size % GRID_SIZE); // Asegurar que sea múltiplo de GRID_SIZE
+            canvas.height = canvas.width;
+            
+            // Recalcular TILE_COUNT si el tamaño cambió
+            // TILE_COUNT = canvas.width / GRID_SIZE; 
+
+            startGame();
+            drawGame(); // Dibujar el estado inicial
+        };
+
+    </script>
+</body>
+</html>
