@@ -78,8 +78,8 @@
         let dy = 0;
         let bread = {};     // ¡Ahora es pan!
         let enemies = [];   // Bolas enemigas
-        const ENEMY_COUNT = 3;
-        const ENEMY_SPEED = GRID_SIZE / 8; // Velocidad de movimiento del enemigo (más lento que el movimiento de la serpiente)
+        const ENEMY_COUNT = 5; // Aumentado de 3 a 5
+        const ENEMY_SPEED = GRID_SIZE / 4; // Aumentado para mayor dificultad (antes era / 8)
         
         let score = 0;
         let gameLoopInterval = null;
@@ -145,7 +145,7 @@
          */
         function initializeObstacles() {
             // Eliminamos los obstáculos fijos
-            obstacles = []; 
+            // La variable 'obstacles' ya no se usa, pero la función se mantiene por claridad.
         }
 
         /**
@@ -205,17 +205,18 @@
                 let moveX = 0;
                 let moveY = 0;
 
+                // Distancia absoluta al enemigo
                 const distanceX = Math.abs(head.x - enemy.x);
                 const distanceY = Math.abs(head.y - enemy.y);
                 
-                // Si está dentro del rango, entra en modo persecución (más rápido)
+                // Si está dentro del rango, entra en modo persecución (usa la velocidad máxima ENEMY_SPEED)
                 if (distanceX < CHASE_RANGE && distanceY < CHASE_RANGE) {
                     if (head.x > enemy.x) moveX = ENEMY_SPEED;
                     else if (head.x < enemy.x) moveX = -ENEMY_SPEED;
                     if (head.y > enemy.y) moveY = ENEMY_SPEED;
                     else if (head.y < enemy.y) moveY = -ENEMY_SPEED;
                 } else {
-                    // Modo de paseo aleatorio (más lento)
+                    // Modo de paseo aleatorio (usa 1/3 de la velocidad máxima)
                     if (Math.random() < 0.02) { // 2% de probabilidad de cambiar de dirección
                         enemy.moveDirX = Math.floor(Math.random() * 3) - 1; // -1, 0, 1
                         enemy.moveDirY = Math.floor(Math.random() * 3) - 1; // -1, 0, 1
@@ -224,7 +225,7 @@
                     moveY = enemy.moveDirY * ENEMY_SPEED / 3;
                 }
                 
-                // Aplicar movimiento y limitar a los bordes del mapa
+                // Aplicar movimiento y limitar a los bordes del mapa (para que no salgan)
                 enemy.x += moveX;
                 enemy.y += moveY;
                 
@@ -243,9 +244,16 @@
             moveEnemies();
 
             // 1. Mover la cabeza de la serpiente
-            const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+            let head = { x: snake[0].x + dx, y: snake[0].y + dy };
             
-            // 2. Comprobar colisiones (paredes, cuerpo, enemigos)
+            // --- Implementar el 'Wrap-Around' (No morir al chocar con paredes) ---
+            if (head.x < 0) head.x = canvas.width - GRID_SIZE;
+            else if (head.x >= canvas.width) head.x = 0;
+            if (head.y < 0) head.y = canvas.height - GRID_SIZE;
+            else if (head.y >= canvas.height) head.y = 0;
+            // -------------------------------------------------------------------------
+            
+            // 2. Comprobar colisiones (cuerpo, enemigos)
             if (checkCollision(head)) {
                 gameOver();
                 return;
@@ -359,14 +367,11 @@
         }
 
         /**
-         * Comprueba colisiones con paredes, cuerpo propio y enemigos.
+         * Comprueba colisiones con cuerpo propio y enemigos. (Las paredes ya no causan muerte)
          * @param {Object} head - La posición de la nueva cabeza.
          * @returns {boolean} - Verdadero si hay colisión.
          */
         function checkCollision(head) {
-            // Colisión con paredes
-            const wallCollision = head.x < 0 || head.x >= canvas.width || head.y < 0 || head.y >= canvas.height;
-
             // Colisión con el propio cuerpo
             const selfCollision = snake.slice(4).some(segment => segment.x === head.x && segment.y === head.y);
 
@@ -377,7 +382,8 @@
                 Math.floor(enemy.y / GRID_SIZE) * GRID_SIZE === head.y
             );
 
-            return wallCollision || selfCollision || enemyCollision;
+            // Solo se muere por golpearse a sí mismo o golpear/ser golpeado por un enemigo
+            return selfCollision || enemyCollision;
         }
 
         /**
